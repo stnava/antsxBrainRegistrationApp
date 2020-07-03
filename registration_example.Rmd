@@ -6,7 +6,7 @@ author:
 output: html_document
 ---
 
-```{r,echo=FALSE}
+```{r setup,echo=TRUE}
 library( ANTsR )
 library( ANTsRNet )
 outdir = "./outputR/example/"
@@ -21,7 +21,17 @@ adniTemplate = cropImage( adniTemplate ) %>% iMath( "PadImage", 16 ) %>% iMath("
 templateMask = getMask( adniTemplate, cleanup = 1 )
 templateMaskVol = sum( templateMask ) * prod( antsGetSpacing( adniTemplate ) )
 affq = antsRegistration( ch2, adniTemplate, "QuickRigid" )
+```
+
+## Template or fixed image
+
+```{r p1,echo=TRUE}
 plot( adniTemplate*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
+```
+
+## Moving image
+
+```{r p2,echo=TRUE}
 fn = "./data/sub-25659_ses-1_T1w.nii.gz"
 img = antsImageRead( fn )
 bxt = ANTsRNet::brainExtraction( img ) # this is pre-computed so does not need to be run here
@@ -29,15 +39,32 @@ bxtThresh = thresholdImage( bxt, 0.25, Inf ) %>% iMath("GetLargestComponent")
 imgn3 = n3BiasFieldCorrection( img * bxtThresh, 4 )  %>% iMath("Normalize")
 affq2 = antsRegistration( ch2, imgn3, "QuickRigid" )
 plot( imgn3*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq2$fwdtransforms ) )
+```
+
+## Registered moving image in template space
+
+```{r p3,echo=TRUE}
 # output the registration results to something like (last folder name in NRG style):
 #  adniT1TemplateSyN  or adniT1TemplateSyNCC
 reg = antsRegistration( adniTemplate, imgn3, typeofTransform = params, outprefix=outprefix )
 plot( reg$warpedmovout*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
 
+```
+
+## jacobian image
+
+a measure of local volumetric change
+
+```{r jac,echo=TRUE}
 jacobian = createJacobianDeterminantImage( adniTemplate, reg$fwdtransforms[1], doLog = TRUE, geom = TRUE )
 plot( jacobian*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
 antsImageWrite( jacobian, paste0( outprefix, "jacobian.nii.gz" ) )
 
+```
+
+## edge detction overlay images
+
+```{r edge,echo=TRUE}
 edgeDetect = iMath( adniTemplate*255, "Canny", 1, 5, 12)
 plot( reg$warpedmovout*255, edgeDetect*255,
   domainImageMap = list( ch2, domainMap=affq$fwdtransforms ), outname = paste0(outprefix, "_QCtemplate.png"),
@@ -54,7 +81,11 @@ plot( reg$warpedfixout*255, edgeDetect2*255,
 plot( reg$warpedfixout*255, edgeDetect2*255,
   domainImageMap = list( ch2, domainMap=affq2$fwdtransforms ),
   axis=3, ncolumns=7, nslices=21, color.overlay='viridis', window.overlay=c(100,255))
+```
 
+## summary data frame
+
+```{r df,echo=TRUE}
 affTx = readAntsrTransform( reg$fwdtransforms[2] )
 affmat = matrix( getAntsrTransformParameters( affTx )[1:9], nrow=3 )
 affVolChange = Matrix::determinant( affmat, logarithm=FALSE )$modulus[1]

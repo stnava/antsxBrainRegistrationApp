@@ -12,7 +12,9 @@ library( reticulate )
 # py_install("antspyx")
 ```
 
-```{python reg, echo=FALSE}
+## Packages and images
+
+```{python packages, echo=TRUE}
 import os
 import numpy
 import pandas
@@ -31,6 +33,11 @@ templateMask = ants.get_mask( adniTemplate, cleanup = 1 )
 spc = ants.get_spacing( adniTemplate )
 templateMaskVol = templateMask.sum() * numpy.prod( spc )
 affq = ants.registration( ch2, adniTemplate, "QuickRigid" )
+```
+
+## template image
+
+```{python template, echo=TRUE}
 ants.plot( adniTemplate, nslices=21, ncol=7,  crop=True, axis=2 )
 #  domain_image_map = ( ch2, affq['fwdtransforms'] ) )
 fn = "./data/sub-25659_ses-1_T1w.nii.gz"
@@ -39,18 +46,42 @@ bxt = antspynet.brain_extraction( img ) # this is pre-computed so does not need 
 bxtThresh = ants.threshold_image( bxt, 0.25, 1e9 ).iMath("GetLargestComponent")
 imgn3 = ants.n3_bias_field_correction( img * bxtThresh, 4 ).iMath("Normalize")
 affq2 = ants.registration( ch2, imgn3, "QuickRigid" )
+```
+
+## target image
+
+```{python target, echo=TRUE}
 ants.plot( imgn3, nslices=21, ncol=7,  crop=True, axis=2 )
 # output the registration results to something like (last folder name in NRG style):
 #  adniT1TemplateSyN  or adniT1TemplateSyNCC
 reg = ants.registration( adniTemplate, imgn3, typeofTransform = params, outprefix=outprefix )
+```
+
+## registered image
+
+```{python registration, echo=TRUE}
 ants.plot( reg['warpedmovout'], nslices=21, ncol=7, axis=2, crop=True )
+```
+
+## jacobian image
+
+```{python j, echo=TRUE}
 jacobian = ants.create_jacobian_determinant_image( adniTemplate, reg['fwdtransforms'][0], do_log = True, geom = True )
 ants.plot( jacobian, nslices=21, ncol=7, axis=2 )
 ants.image_write( jacobian, outprefix + "jacobian.nii.gz" )
+```
+
+## edge map overlays
+
+```{python e, echo=TRUE}
 edgeDetect = ants.iMath( adniTemplate*255, "Canny", 1, 5, 12)
 ants.plot( reg['warpedmovout'], ants.iMath( edgeDetect, "GD", 1 ), title = 'edge map',
   axis=2, ncol=7, nslices=21,  crop=True, overlay_cmap='viridis', overlay_alpha=0.5  )
+```
 
+## summary of Results
+
+```{python summ}
 affTx = ants.read_transform( reg['fwdtransforms'][1] )
 paramvec = ants.get_ants_transform_parameters( affTx )[0:9]
 affmat = numpy.reshape( paramvec, (3,3))
