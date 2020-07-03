@@ -9,6 +9,8 @@ output: html_document
 ```{r setup,echo=TRUE}
 library( ANTsR )
 library( ANTsRNet )
+library( tensorflow )
+library( keras )
 outdir = "./outputR/example/"
 heavyLifting = 'SyNCC' # best results but costly - start with quick
 quicker = 'SyN'
