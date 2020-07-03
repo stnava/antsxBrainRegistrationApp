@@ -8,9 +8,9 @@ output: html_document
 
 ```{r setup,echo=TRUE}
 library( ANTsR )
-library( ANTsRNet )
 library( tensorflow )
 library( keras )
+library( ANTsRNet )
 outdir = "./outputR/example/"
 heavyLifting = 'SyNCC' # best results but costly - start with quick
 quicker = 'SyN'
@@ -36,7 +36,18 @@ plot( adniTemplate*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( c
 ```{r p2,echo=TRUE}
 fn = "./data/sub-25659_ses-1_T1w.nii.gz"
 img = antsImageRead( fn )
-bxt = ANTsRNet::brainExtraction( img ) # this is pre-computed so does not need to be run here
+for ( k in 1:2 )
+  tryCatch(
+      expr = {
+        bxt = brainExtraction( img, verbose=TRUE )
+      },
+      error = function(e){
+      },
+      warning = function(w){
+      },
+      finally = {
+      })
+
 bxtThresh = thresholdImage( bxt, 0.25, Inf ) %>% iMath("GetLargestComponent")
 imgn3 = n3BiasFieldCorrection( img * bxtThresh, 4 )  %>% iMath("Normalize")
 affq2 = antsRegistration( ch2, imgn3, "QuickRigid" )
