@@ -1,0 +1,71 @@
+---
+title: "Deformable Brain Registration Example"
+author:
+  - "Brian B. Avants"
+  - "Nicholas J. Tustison"
+output: html_document
+---
+
+```{r,echo=FALSE}
+library( ANTsR )
+library( ANTsRNet )
+outdir = "./outputR/example/"
+heavyLifting = 'SyNCC' # best results but costly - start with quick
+quicker = 'SyN'
+params = quicker
+dir.create( outdir, recursive = TRUE )
+outprefix = paste0( outdir, 'exampleR-adniT1Template', params )
+ch2 = antsImageRead( getANTsRData( "ch2") )
+adniTemplate = antsImageRead( "./data/T_template0_BrainCerebellum.nii.gz")
+adniTemplate = cropImage( adniTemplate ) %>% iMath( "PadImage", 16 ) %>% iMath("Normalize")
+templateMask = getMask( adniTemplate, cleanup = 1 )
+templateMaskVol = sum( templateMask ) * prod( antsGetSpacing( adniTemplate ) )
+affq = antsRegistration( ch2, adniTemplate, "QuickRigid" )
+plot( adniTemplate*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
+fn = "./data/sub-25659_ses-1_T1w.nii.gz"
+img = antsImageRead( fn )
+bxt = ANTsRNet::brainExtraction( img ) # this is pre-computed so does not need to be run here
+bxtThresh = thresholdImage( bxt, 0.25, Inf ) %>% iMath("GetLargestComponent")
+imgn3 = n3BiasFieldCorrection( img * bxtThresh, 4 )  %>% iMath("Normalize")
+affq2 = antsRegistration( ch2, imgn3, "QuickRigid" )
+plot( imgn3*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq2$fwdtransforms ) )
+# output the registration results to something like (last folder name in NRG style):
+#  adniT1TemplateSyN  or adniT1TemplateSyNCC
+reg = antsRegistration( adniTemplate, imgn3, typeofTransform = params, outprefix=outprefix )
+plot( reg$warpedmovout*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
+
+jacobian = createJacobianDeterminantImage( adniTemplate, reg$fwdtransforms[1], doLog = TRUE, geom = TRUE )
+plot( jacobian*255, nslices=21, ncolumns=7, axis=3, domainImageMap = list( ch2, domainMap=affq$fwdtransforms ) )
+antsImageWrite( jacobian, paste0( outprefix, "jacobian.nii.gz" ) )
+
+edgeDetect = iMath( adniTemplate*255, "Canny", 1, 5, 12)
+plot( reg$warpedmovout*255, edgeDetect*255,
+  domainImageMap = list( ch2, domainMap=affq$fwdtransforms ), outname = paste0(outprefix, "_QCtemplate.png"),
+  axis=3, ncolumns=7, nslices=21, color.overlay='red', window.overlay=c(100,255))
+plot( reg$warpedmovout*255, edgeDetect*255,
+  domainImageMap = list( ch2, domainMap=affq$fwdtransforms ),
+  axis=3, ncolumns=7, nslices=21, color.overlay='red', window.overlay=c(100,255))
+
+edgeDetect2 = iMath( imgn3*255, "Canny", 1, 5, 12)
+plot( reg$warpedfixout*255, edgeDetect2*255,
+  domainImageMap = list( ch2, domainMap=affq2$fwdtransforms ), outname = paste0(outprefix, "_QCmove.png"),
+  axis=3, ncolumns=7, nslices=21, color.overlay='viridis', window.overlay=c(100,255))
+
+plot( reg$warpedfixout*255, edgeDetect2*255,
+  domainImageMap = list( ch2, domainMap=affq2$fwdtransforms ),
+  axis=3, ncolumns=7, nslices=21, color.overlay='viridis', window.overlay=c(100,255))
+
+affTx = readAntsrTransform( reg$fwdtransforms[2] )
+affmat = matrix( getAntsrTransformParameters( affTx )[1:9], nrow=3 )
+affVolChange = Matrix::determinant( affmat, logarithm=FALSE )$modulus[1]
+summaryDF = data.frame(
+  filename = outprefix,
+  brainVol = sum( bxtThresh ) * prod( antsGetSpacing( imgn3 ) ),
+  affineVolumeChange = affVolChange,
+  MI = antsImageMutualInformation( adniTemplate , reg$warpedmovout ),
+  corr = cor( adniTemplate[templateMask>0] , reg$warpedmovout[templateMask>0] ),
+  MSQ = mean( abs( adniTemplate - reg$warpedmovout ) ) )
+write.csv( summaryDF, paste0( outprefix, "summary.csv" ) )
+pander::set.caption("Registration summary.")
+pander::pander( summaryDF )
+```

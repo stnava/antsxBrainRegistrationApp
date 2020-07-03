@@ -1,0 +1,67 @@
+---
+title: "Deformable Brain Registration Example: python"
+author:
+  - "Brian B. Avants"
+  - "Nicholas J. Tustison"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library( reticulate )
+# reticulate::use_python( somethinghere, required=T) # you may need to change this
+# py_install("antspyx")
+```
+
+```{python reg, echo=FALSE}
+import os
+import numpy
+import pandas
+import ants
+import antspynet
+outdir = "./outputPy/example/"
+os.makedirs( outdir, exist_ok=True )
+heavyLifting = 'SyNCC' # best results but costly - start with quick
+quicker = 'SyN'
+params = quicker
+outprefix = outdir + 'examplePy-adniT1Template' + params
+ch2 = ants.image_read( ants.get_data( "ch2") )
+adniTemplate = ants.image_read( "./data/T_template0_BrainCerebellum.nii.gz")
+adniTemplate = ants.crop_image( adniTemplate ).iMath_pad( 16 ).iMath("Normalize")
+templateMask = ants.get_mask( adniTemplate, cleanup = 1 )
+spc = ants.get_spacing( adniTemplate )
+templateMaskVol = templateMask.sum() * numpy.prod( spc )
+affq = ants.registration( ch2, adniTemplate, "QuickRigid" )
+ants.plot( adniTemplate, nslices=21, ncol=7,  crop=True, axis=2 )
+#  domain_image_map = ( ch2, affq['fwdtransforms'] ) )
+fn = "./data/sub-25659_ses-1_T1w.nii.gz"
+img = ants.image_read( fn )
+bxt = antspynet.brain_extraction( img ) # this is pre-computed so does not need to be run here
+bxtThresh = ants.threshold_image( bxt, 0.25, 1e9 ).iMath("GetLargestComponent")
+imgn3 = ants.n3_bias_field_correction( img * bxtThresh, 4 ).iMath("Normalize")
+affq2 = ants.registration( ch2, imgn3, "QuickRigid" )
+ants.plot( imgn3, nslices=21, ncol=7,  crop=True, axis=2 )
+# output the registration results to something like (last folder name in NRG style):
+#  adniT1TemplateSyN  or adniT1TemplateSyNCC
+reg = ants.registration( adniTemplate, imgn3, typeofTransform = params, outprefix=outprefix )
+ants.plot( reg['warpedmovout'], nslices=21, ncol=7, axis=2, crop=True )
+jacobian = ants.create_jacobian_determinant_image( adniTemplate, reg['fwdtransforms'][0], do_log = True, geom = True )
+ants.plot( jacobian, nslices=21, ncol=7, axis=2 )
+ants.image_write( jacobian, outprefix + "jacobian.nii.gz" )
+edgeDetect = ants.iMath( adniTemplate*255, "Canny", 1, 5, 12)
+ants.plot( reg['warpedmovout'], ants.iMath( edgeDetect, "GD", 1 ), title = 'edge map',
+  axis=2, ncol=7, nslices=21,  crop=True, overlay_cmap='viridis', overlay_alpha=0.5  )
+
+affTx = ants.read_transform( reg['fwdtransforms'][1] )
+paramvec = ants.get_ants_transform_parameters( affTx )[0:9]
+affmat = numpy.reshape( paramvec, (3,3))
+affVolChange = numpy.linalg.det( affmat )
+summaryDF = { 'filename' : outprefix,
+  'brainVol' : bxtThresh.sum() * numpy.prod( ants.get_spacing( imgn3 ) ),
+  'affineVolumeChange' : affVolChange,
+  'MI' : ants.image_mutual_information( adniTemplate , reg['warpedmovout'] ),
+  'corr' : numpy.corrcoef( adniTemplate[templateMask>0] , reg['warpedmovout'][templateMask>0] )[0,1],
+  'MSQ' : ( adniTemplate - reg['warpedmovout'] ).abs().mean() }
+df = pandas.DataFrame([summaryDF])
+df.to_csv( outprefix + "summary.csv" )
+print( df )
+```
